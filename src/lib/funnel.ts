@@ -1,7 +1,8 @@
 export type FunnelEvent =
   | "add_to_cart"
   | "view_cart"
-  | "begin_checkout";
+  | "begin_checkout"
+  | "purchase";
 
 interface FunnelEventPayload {
   event: FunnelEvent;

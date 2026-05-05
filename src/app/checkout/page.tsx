@@ -1,80 +1,154 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { getDb } from "@/lib/db";
-import { getValidatedCart, formatCents } from "@/lib/cart";
-import { trackEvent } from "@/lib/funnel";
-import CheckoutForm from "./checkout-form";
+import { useSearchParams } from "next/navigation";
+import { formatCents } from "@/lib/cart/format-cents";
 
-export const dynamic = "force-dynamic";
+interface CartItem {
+  productId: string;
+  name: string;
+  slug: string;
+  priceCents: number;
+  imageUrl: string | null;
+  quantity: number;
+}
 
-export default async function CheckoutPage() {
-  const cookieStore = await cookies();
-  const cookieCartId = cookieStore.get("paperclip_cart_id")?.value;
+export default function CheckoutPage() {
+  const searchParams = useSearchParams();
+  const cartId = searchParams.get("cartId") ?? "";
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
+  const [error, setError] = useState("");
 
-  if (!cookieCartId || !process.env.DATABASE_URL) {
+  useEffect(() => {
+    if (!cartId) {
+      setLoading(false);
+      return;
+    }
+    fetch(`/api/cart?cartId=${encodeURIComponent(cartId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setItems(data.items ?? []);
+        }
+      })
+      .catch(() => setError("Failed to load cart"))
+      .finally(() => setLoading(false));
+  }, [cartId]);
+
+  const subtotal = items.reduce((s, i) => s + i.priceCents * i.quantity, 0);
+
+  async function handleCheckout() {
+    if (!cartId) return;
+    setRedirecting(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartId }),
+      });
+
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setRedirecting(false);
+        return;
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      setError("Checkout failed. Please try again.");
+      setRedirecting(false);
+    }
+  }
+
+  if (loading) {
     return (
-      <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 720, margin: '0 auto', padding: 24 }}>
-        <h1 style={{ fontSize: 28 }}>Checkout</h1>
-        <p>Your cart is empty. <Link href="/products" style={{ color: '#0066cc' }}>Browse products</Link></p>
+      <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "0 auto", padding: 24 }}>
+        <p>Loading cart...</p>
       </main>
     );
   }
 
-  const db = getDb();
-  const cart = await getValidatedCart(db, cookieCartId);
-
-  if (cart.items.length === 0) {
+  if (!cartId) {
     return (
-      <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 720, margin: '0 auto', padding: 24 }}>
-        <h1 style={{ fontSize: 28 }}>Checkout</h1>
-        <p>Your cart is empty. <Link href="/products" style={{ color: '#0066cc' }}>Browse products</Link></p>
+      <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "0 auto", padding: 24 }}>
+        <h1 style={{ fontSize: 28, marginBottom: 16 }}>Checkout</h1>
+        <p style={{ color: "#666" }}>No cart found. <Link href="/" style={{ color: "#0066cc" }}>Continue shopping</Link></p>
       </main>
     );
   }
-
-  await trackEvent(cookieCartId, { event: "begin_checkout", cartId: cart.cartId });
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 720, margin: '0 auto', padding: 24 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 24 }}>Checkout</h1>
+    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "0 auto", padding: 24 }}>
+      <Link href="/" style={{ color: "#0066cc", fontSize: 14 }}>&larr; Continue shopping</Link>
+      <h1 style={{ fontSize: 28, margin: "16px 0 24px" }}>Checkout</h1>
 
-      <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 20, marginBottom: 12 }}>Order Summary</h2>
-        {cart.items.map((item) => (
-          <div
-            key={item.productId}
+      {items.length === 0 ? (
+        <p style={{ color: "#666" }}>Your cart is empty.</p>
+      ) : (
+        <>
+          <div style={{ borderTop: "1px solid #e2e8f0" }}>
+            {items.map((item) => (
+              <div
+                key={item.productId}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "12px 0",
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600 }}>{item.name}</div>
+                  <div style={{ color: "#64748b", fontSize: 14 }}>Qty: {item.quantity}</div>
+                </div>
+                <div style={{ fontWeight: 600 }}>{formatCents(item.priceCents * item.quantity)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0", fontWeight: 700, fontSize: 18 }}>
+            <span>Total</span>
+            <span>{formatCents(subtotal)}</span>
+          </div>
+
+          {error && (
+            <p style={{ color: "#c00", fontSize: 14, marginBottom: 12 }}>{error}</p>
+          )}
+
+          <button
+            onClick={handleCheckout}
+            disabled={redirecting}
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "8px 0",
-              borderBottom: "1px solid #eee",
+              width: "100%",
+              padding: "14px 24px",
+              fontSize: 16,
+              fontWeight: 600,
+              background: redirecting ? "#94a3b8" : "#0066cc",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              cursor: redirecting ? "wait" : "pointer",
             }}
           >
-            <span>
-              {item.name} &times; {item.quantity}
-            </span>
-            <span style={{ fontWeight: 600 }}>
-              {formatCents(item.priceCents * item.quantity)}
-            </span>
-          </div>
-        ))}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            paddingTop: 12,
-            marginTop: 8,
-            borderTop: "2px solid #e0e0e0",
-            fontWeight: 700,
-            fontSize: 18,
-          }}
-        >
-          <span>Subtotal</span>
-          <span>{formatCents(cart.subtotalCents)}</span>
-        </div>
-      </section>
+            {redirecting ? "Redirecting to Stripe..." : "Proceed to Payment"}
+          </button>
 
-      <CheckoutForm subtotalCents={cart.subtotalCents} />
+          <p style={{ color: "#64748b", fontSize: 13, marginTop: 12, textAlign: "center" }}>
+            You will be redirected to Stripe to complete your payment securely.
+            We never see your card details.
+          </p>
+        </>
+      )}
     </main>
   );
 }
