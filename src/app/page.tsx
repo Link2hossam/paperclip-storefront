@@ -1,25 +1,20 @@
-import type { Metadata } from "next";
+import ProductGrid from "./components/ProductGrid";
 
-export const metadata: Metadata = {
-  title: "Paperclip",
-  description: "Paperclip storefront",
-};
-
-export default function Home() {
+export default function HomePage() {
   return (
     <main
       style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        fontFamily:
-          'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        maxWidth: 960,
+        margin: "0 auto",
+        padding: "2rem 1rem",
       }}
     >
-      <h1>Paperclip</h1>
-      <p>Hello from the storefront.</p>
+      <h1 style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>Paperclip</h1>
+      <p style={{ color: "#666", marginBottom: "2rem" }}>
+        AI-native project management for teams that ship.
+      </p>
+      <ProductGrid />
     </main>
   );
 }
